@@ -1,0 +1,25 @@
+{
+    "avg_processing_time": 0,
+    "total_inferences": 0,
+    "inferences_by_type": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0
+    },
+    "pending_processes": 0,
+    "pending_by_type": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0
+    },
+    "failed_processes": 1,
+    "failed_by_type": {
+        "1": 0,
+        "2": 1,
+        "3": 0,
+        "4": 0
+    },
+    "processing_times": []
+}
