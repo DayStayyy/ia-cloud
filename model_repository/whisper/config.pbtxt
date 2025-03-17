@@ -1,0 +1,34 @@
+name: "whisper"
+backend: "python"
+max_batch_size: 8
+input [
+  {
+    name: "audio_file"
+    data_type: TYPE_STRING
+    dims: [ 1 ]
+  },
+  {
+    name: "request_type"
+    data_type: TYPE_INT32
+    dims: [ 1 ]
+  }
+]
+output [
+  {
+    name: "subtitles"
+    data_type: TYPE_STRING
+    dims: [ 1 ]
+  },
+  {
+    name: "text"
+    data_type: TYPE_STRING
+    dims: [ 1 ]
+  }
+]
+instance_group [
+  {
+    count: 1
+    kind: KIND_GPU
+    gpus: [ 0 ]
+  }
+]
