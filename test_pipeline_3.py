@@ -21,7 +21,7 @@ ffmpeg.run(stream, overwrite_output=True)
 
 device = "cpu"
 whisper = pipeline("automatic-speech-recognition",
-                   "openai/whisper-medium.en",
+                   "openai/whisper-small.en",
                    torch_dtype=torch.float16,
                    device=device)
 
@@ -69,7 +69,7 @@ output_video = f"output.mp4"
 subtitle_track_title = subtitle_file.replace(".srt", "")
 
 # Change if subtitile must be umbedded or not in the video
-embedded_subtitle = False
+embedded_subtitle = True
 if not embedded_subtitle:
     stream = ffmpeg.output(
         video_input_stream, subtitle_input_stream, output_video, **{"c": "copy", "c:s": "mov_text"},

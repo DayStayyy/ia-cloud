@@ -1,10 +1,10 @@
 {
-    "avg_processing_time": 0,
-    "total_inferences": 0,
+    "avg_processing_time": 49.675336718559265,
+    "total_inferences": 2,
     "inferences_by_type": {
-        "1": 0,
+        "1": 1,
         "2": 0,
-        "3": 0,
+        "3": 1,
         "4": 0
     },
     "pending_processes": 0,
@@ -14,12 +14,15 @@
         "3": 0,
         "4": 0
     },
-    "failed_processes": 2,
+    "failed_processes": 14,
     "failed_by_type": {
-        "1": 1,
+        "1": 11,
         "2": 1,
-        "3": 0,
+        "3": 2,
         "4": 0
     },
-    "processing_times": []
+    "processing_times": [
+        46.65503478050232,
+        52.69563865661621
+    ]
 }
