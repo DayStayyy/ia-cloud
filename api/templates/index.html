@@ -55,8 +55,31 @@
             max-width: 100%;
             margin-top: 10px;
         }
-        .stats-card {
-            margin-bottom: 20px;
+        .nav-link {
+            color: white;
+            text-decoration: none;
+            margin: 0 15px;
+        }
+        .nav-link:hover {
+            text-decoration: underline;
+            color: #f8f9fa;
+        }
+        .advanced-options {
+            border-top: 1px solid #dee2e6;
+            margin-top: 15px;
+            padding-top: 15px;
+        }
+        .model-description {
+            font-size: 0.85rem;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+        [data-bs-toggle="collapse"] {
+            cursor: pointer;
+        }
+        .badge-speaker {
+            margin-left: 10px;
+            background-color: #6f42c1;
         }
     </style>
 </head>
@@ -65,18 +88,21 @@
         <div class="header text-center">
             <h1>Projet Fil Rouge - Application de Sous-titrage</h1>
             <p>Transcription automatique de vidéos et fichiers audio</p>
+            <div class="mt-3">
+                <a href="/" class="nav-link">Accueil</a>
+            </div>
         </div>
 
         <div class="main-container">
             <div class="row">
-                <div class="col-md-7">
+                <div class="col-md-12">
                     <h3>Téléverser un fichier</h3>
                     <form id="uploadForm" enctype="multipart/form-data">
                         <div class="mb-3">
                             <label for="fileInput" class="form-label">Sélectionner un fichier vidéo (.mp4) ou audio (.wav)</label>
-                            <input class="form-control" type="file" id="fileInput" accept=".mp4,.wav" required>
+                            <input class="form-control" type="file" id="fileInput" name="video" accept=".mp4,.wav" required>
                         </div>
-                        
+
                         <div class="preview-container">
                             <video id="videoPreview" controls style="display: none;"></video>
                             <audio id="audioPreview" controls style="display: none;"></audio>
@@ -85,56 +111,73 @@
                         <div class="mb-3 mt-4">
                             <label class="form-label">Sélectionner le type de résultat souhaité</label>
                             <div class="form-check">
-                                <input class="form-check-input" type="radio" name="outputType" id="videoEmbedded" value="1" checked>
+                                <input class="form-check-input" type="radio" name="type_of_request" id="videoEmbedded" value="1" checked>
                                 <label class="form-check-label" for="videoEmbedded">
                                     Vidéo avec sous-titres intégrés
                                 </label>
                             </div>
                             <div class="form-check">
-                                <input class="form-check-input" type="radio" name="outputType" id="videoMetadata" value="2">
+                                <input class="form-check-input" type="radio" name="type_of_request" id="videoMetadata" value="2">
                                 <label class="form-check-label" for="videoMetadata">
                                     Vidéo + sous-titres séparés
                                 </label>
                             </div>
                             <div class="form-check">
-                                <input class="form-check-input" type="radio" name="outputType" id="subtitlesOnly" value="3">
+                                <input class="form-check-input" type="radio" name="type_of_request" id="subtitlesOnly" value="3">
                                 <label class="form-check-label" for="subtitlesOnly">
                                     Sous-titres uniquement
                                 </label>
                             </div>
                             <div class="form-check">
-                                <input class="form-check-input" type="radio" name="outputType" id="textOnly" value="4">
+                                <input class="form-check-input" type="radio" name="type_of_request" id="textOnly" value="4">
                                 <label class="form-check-label" for="textOnly">
                                     Texte uniquement (sans timestamp)
                                 </label>
                             </div>
                         </div>
 
-                        <button type="submit" class="btn btn-primary">Lancer le traitement</button>
+                        <div class="mt-4">
+                            <p data-bs-toggle="collapse" data-bs-target="#advancedOptions" aria-expanded="false" aria-controls="advancedOptions">
+                                <i class="fas fa-cog"></i> Options avancées <i class="fas fa-chevron-down"></i>
+                            </p>
+                            <div class="collapse" id="advancedOptions">
+                                <div class="advanced-options">
+                                    <div class="mb-3">
+                                        <label for="modelSelect" class="form-label">Modèle de transcription</label>
+                                        <select class="form-select" id="modelSelect" name="model_name">
+                                            <!-- Les modèles seront chargés dynamiquement ici -->
+                                            <option value="whisper-small" selected>Chargement des modèles...</option>
+                                        </select>
+                                        <div id="modelDescription" class="model-description">
+                                            Chargement des descriptions...
+                                        </div>
+                                    </div>
+
+                                    <div class="form-check mb-3">
+                                        <input class="form-check-input" type="checkbox" id="identifySpeakers" name="identify_speakers">
+                                        <label class="form-check-label" for="identifySpeakers">
+                                            Identifier les locuteurs
+                                        </label>
+                                        <div class="form-text">Ajoute l'identification des locuteurs dans les sous-titres. Note: cette option n'est disponible qu'avec certains modèles.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary mt-3">Lancer le traitement</button>
                     </form>
 
                     <div class="loader" id="processingLoader"></div>
-                </div>
-
-                <div class="col-md-5">
-                    <div class="card stats-card">
-                        <div class="card-header bg-primary text-white">
-                            Statistiques du Service
-                        </div>
-                        <div class="card-body">
-                            <p><strong>Temps de calcul moyen:</strong> <span id="avgProcessingTime">--</span></p>
-                            <p><strong>Nombre d'inférences réalisées:</strong> <span id="totalInferences">--</span></p>
-                            <p><strong>Traitements en cours:</strong> <span id="pendingProcesses">--</span></p>
-                            <p><strong>Traitements échoués:</strong> <span id="failedProcesses">--</span></p>
-                            <button id="refreshStats" class="btn btn-sm btn-outline-secondary">Rafraîchir</button>
-                        </div>
-                    </div>
                 </div>
             </div>
 
             <div class="result-section" id="resultSection">
                 <hr>
                 <h3>Résultat du traitement</h3>
+                <div id="modelUsedInfo" class="alert alert-secondary" style="display: none;">
+                    Modèle utilisé: <span id="modelUsedName"></span>
+                    <span id="speakerBadge" class="badge rounded-pill badge-speaker" style="display: none;">Avec identification des locuteurs</span>
+                </div>
                 <div id="resultContent" class="mt-4">
                     <!-- Les résultats seront affichés dynamiquement ici -->
                 </div>
@@ -146,11 +189,234 @@
 
         <div class="footer">
             <p>Projet Fil Rouge - Industrialisation d'un pipeline d'IA dans le cloud</p>
-            <p>© 2025 Scalian</p>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="static/js/main.js"></script>
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Référence aux éléments DOM
+        const fileInput = document.getElementById('fileInput');
+        const videoPreview = document.getElementById('videoPreview');
+        const audioPreview = document.getElementById('audioPreview');
+        const uploadForm = document.getElementById('uploadForm');
+        const processingLoader = document.getElementById('processingLoader');
+        const resultSection = document.getElementById('resultSection');
+        const resultContent = document.getElementById('resultContent');
+        const downloadResult = document.getElementById('downloadResult');
+        const modelSelect = document.getElementById('modelSelect');
+        const modelDescription = document.getElementById('modelDescription');
+        const identifySpeakers = document.getElementById('identifySpeakers');
+        const modelUsedInfo = document.getElementById('modelUsedInfo');
+        const modelUsedName = document.getElementById('modelUsedName');
+        const speakerBadge = document.getElementById('speakerBadge');
+
+        // Charger les modèles disponibles
+        async function loadModels() {
+            try {
+                const response = await fetch('/api/models');
+                if (!response.ok) {
+                    throw new Error(`Erreur HTTP: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                // Vider le select
+                modelSelect.innerHTML = '';
+
+                // Ajouter chaque modèle
+                data.models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.name;
+                    option.textContent = model.name;
+                    option.dataset.description = model.description;
+                    option.dataset.supportsSpeakerId = model.supports_speaker_id;
+                    modelSelect.appendChild(option);
+                });
+
+                // Mettre à jour la description du modèle sélectionné
+                updateModelDescription();
+
+            } catch (error) {
+                console.error('Erreur lors du chargement des modèles:', error);
+                modelDescription.textContent = 'Erreur lors du chargement des modèles.';
+            }
+        }
+
+        // Mettre à jour la description du modèle
+        function updateModelDescription() {
+            const selectedOption = modelSelect.options[modelSelect.selectedIndex];
+            if (selectedOption) {
+                const description = selectedOption.dataset.description;
+                const supportsSpeakerId = selectedOption.dataset.supportsSpeakerId === 'true';
+
+                modelDescription.textContent = description;
+
+                // Activer/désactiver l'option d'identification des locuteurs
+                identifySpeakers.disabled = !supportsSpeakerId;
+                if (!supportsSpeakerId) {
+                    identifySpeakers.checked = false;
+                }
+            }
+        }
+
+        // Écouter le changement de modèle
+        modelSelect.addEventListener('change', updateModelDescription);
+
+        // Charger les modèles au chargement de la page
+        loadModels();
+
+        // Gestion de l'aperçu du fichier téléchargé
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Cacher les deux previews d'abord
+            videoPreview.style.display = 'none';
+            audioPreview.style.display = 'none';
+
+            // Vérifier le type de fichier et afficher le preview approprié
+            if (file.type.startsWith('video/')) {
+                const videoURL = URL.createObjectURL(file);
+                videoPreview.src = videoURL;
+                videoPreview.style.display = 'block';
+
+                // Activer/désactiver les options de sortie en fonction du type de fichier
+                document.getElementById('videoEmbedded').disabled = false;
+                document.getElementById('videoMetadata').disabled = false;
+            } else if (file.type === 'audio/wav' || file.type === 'audio/x-wav') {
+                const audioURL = URL.createObjectURL(file);
+                audioPreview.src = audioURL;
+                audioPreview.style.display = 'block';
+
+                // Désactiver les options qui ne sont pas disponibles pour l'audio
+                document.getElementById('videoEmbedded').disabled = true;
+                document.getElementById('videoMetadata').disabled = true;
+
+                // Sélectionner une option disponible
+                document.getElementById('subtitlesOnly').checked = true;
+            }
+        });
+
+        // Gestion du formulaire d'upload
+        uploadForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            // Vérification du fichier
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Veuillez sélectionner un fichier');
+                return;
+            }
+
+            // Récupération des valeurs du formulaire
+            const formData = new FormData(uploadForm);
+
+            // Afficher le loader
+            processingLoader.style.display = 'block';
+
+            try {
+                // Envoi de la requête au serveur
+                const response = await fetch('/upload-video', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Erreur HTTP: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                // Masquer le loader
+                processingLoader.style.display = 'none';
+
+                // Afficher la section de résultat
+                resultSection.style.display = 'block';
+
+                // Afficher l'info sur le modèle utilisé
+                if (data.model_used) {
+                    modelUsedInfo.style.display = 'block';
+                    modelUsedName.textContent = data.model_used;
+
+                    // Afficher le badge d'identification des locuteurs si utilisé
+                    if (data.speaker_identification) {
+                        speakerBadge.style.display = 'inline-block';
+                    } else {
+                        speakerBadge.style.display = 'none';
+                    }
+                } else {
+                    modelUsedInfo.style.display = 'none';
+                }
+
+                // Traitement de la réponse en fonction du type de sortie demandé
+                displayResult(data, formData.get('type_of_request'));
+
+                // Mettre à jour le lien de téléchargement
+                if (data.download_url) {
+                    downloadResult.href = data.download_url;
+                    downloadResult.style.display = 'inline-block';
+                } else {
+                    downloadResult.style.display = 'none';
+                }
+
+            } catch (error) {
+                console.error('Erreur lors du traitement:', error);
+                alert('Une erreur est survenue lors du traitement du fichier: ' + error.message);
+                processingLoader.style.display = 'none';
+            }
+        });
+
+        // Fonction pour afficher le résultat selon le type demandé
+        function displayResult(data, outputType) {
+            resultContent.innerHTML = '';
+
+            switch (parseInt(outputType)) {
+                case 1: // Vidéo avec sous-titres intégrés
+                    resultContent.innerHTML = `
+                        <div class="alert alert-success">Traitement terminé avec succès!</div>
+                        <video controls width="100%" src="${data.result_url}"></video>
+                    `;
+                    break;
+
+                case 2: // Vidéo + sous-titres séparés
+                    resultContent.innerHTML = `
+                        <div class="alert alert-success">Traitement terminé avec succès!</div>
+                        <video controls width="100%" src="${data.video_url}"></video>
+                        <div class="mt-3">
+                            <h5>Sous-titres:</h5>
+                            <pre class="bg-light p-3 rounded">${data.subtitles}</pre>
+                        </div>
+                    `;
+                    break;
+
+                case 3: // Sous-titres uniquement
+                    resultContent.innerHTML = `
+                        <div class="alert alert-success">Traitement terminé avec succès!</div>
+                        <h5>Sous-titres:</h5>
+                        <pre class="bg-light p-3 rounded">${data.subtitles}</pre>
+                    `;
+                    break;
+
+                case 4: // Texte uniquement
+                    resultContent.innerHTML = `
+                        <div class="alert alert-success">Traitement terminé avec succès!</div>
+                        <h5>Transcription complète:</h5>
+                        <div class="bg-light p-3 rounded">
+                            <p>${data.text}</p>
+                        </div>
+                    `;
+                    break;
+
+                default:
+                    resultContent.innerHTML = `
+                        <div class="alert alert-warning">Type de résultat non reconnu.</div>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+            }
+        }
+    });
+    </script>
 </body>
 </html>

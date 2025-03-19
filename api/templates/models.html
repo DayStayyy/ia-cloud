@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestion des Modèles - Application de Sous-titrage</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding-top: 20px;
+            background-color: #f8f9fa;
+        }
+        .header {
+            background-color: #343a40;
+            color: white;
+            padding: 20px 0;
+            margin-bottom: 30px;
+            border-radius: 5px;
+        }
+        .main-container {
+            background-color: white;
+            border-radius: 5px;
+            padding: 30px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding: 20px;
+            color: #6c757d;
+        }
+        .model-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 5px;
+            padding: 20px;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+        }
+        .model-card:hover {
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .model-card.active {
+            border-color: #0d6efd;
+            box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+        }
+        .model-badge {
+            font-size: 0.8rem;
+            margin-left: 10px;
+        }
+        .nav-link {
+            color: white;
+            text-decoration: none;
+            margin: 0 15px;
+        }
+        .nav-link:hover {
+            text-decoration: underline;
+            color: #f8f9fa;
+        }
+        .extension-section {
+            background-color: #f4f4f4;
+            border-radius: 5px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header text-center">
+            <h1>Projet Fil Rouge - Application de Sous-titrage</h1>
+            <p>Gestion des modèles de transcription</p>
+            <div class="mt-3">
+                <a href="/" class="nav-link">Accueil</a>
+                <a href="/stats" class="nav-link">Statistiques</a>
+                <a href="/models" class="nav-link">Modèles</a>
+            </div>
+        </div>
+
+        <div class="main-container">
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h3>Modèles de Transcription Disponibles</h3>
+                    <p class="text-muted">
+                        En tant que data scientist, vous pouvez sélectionner différents modèles de transcription pour vos besoins spécifiques,
+                        y compris des modèles avec identification de locuteur.
+                    </p>
+                </div>
+            </div>
+
+            <div class="row" id="modelsList">
+                <!-- Les modèles seront chargés ici dynamiquement -->
+                <div class="col-12 text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Chargement...</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mt-5">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0">Utilisation des modèles</h5>
+                        </div>
+                        <div class="card-body">
+                            <p>Pour utiliser un modèle spécifique lors de la transcription:</p>
+                            <ol>
+                                <li>Accédez à la page d'accueil</li>
+                                <li>Sélectionnez votre fichier à transcrire</li>
+                                <li>Choisissez le type de sortie souhaité</li>
+                                <li>Dans les options avancées, sélectionnez le modèle à utiliser</li>
+                                <li>Activez l'identification des locuteurs si nécessaire</li>
+                                <li>Lancez le traitement</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-info text-white">
+                            <h5 class="mb-0">Statistiques d'utilisation des modèles</h5>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="modelUsageChart"></canvas>
+                            <div class="text-center mt-3">
+                                <button id="refreshStats" class="btn btn-sm btn-outline-secondary">Rafraîchir</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header bg-secondary text-white">
+                            <h5 class="mb-0">Pour les data scientists</h5>
+                        </div>
+                        <div class="card-body">
+                            <h6>Ajouter un nouveau modèle de transcription</h6>
+                            <p>Pour ajouter un nouveau modèle à la plateforme, vous avec 2 possibilité:</p>
+                            <ol>
+                                <li>Modifier le fichier <code>model.py</code> dans le répertoire du modèle Triton</li>
+                                <li>Ajouter la définition de votre modèle dans le dictionnaire <code>MODELS</code></li>
+                                <li>Ajouter le modèle à la liste <code>AVAILABLE_MODELS</code> dans le fichier <code>main.py</code></li>
+                                <li>Redémarrer le service</li>
+                            </ol>
+                            OU
+                            <p></p>
+                                                    <ol>
+                            <li>Ajoutez votre modèle dans le dossier <code>model_repository/</code></li>
+                            <li>Modifiez le fichier <code>config.pbtxt</code> correspondant</li>
+                            <li>Mettez à jour l'API pour utiliser votre nouveau modèle</li>
+    </ol>
+                                                                                    <div class="alert alert-info">
+                                <strong>Note:</strong> Pour implémenter l'identification de locuteurs, vous devez utiliser la bibliothèque Pyannote
+                                et configurer <code>supports_speaker_id=True</code> dans la définition du modèle.
+                            </div>
+
+
+                        </div>
+                        <div class="alert alert-warning">
+                            <strong>Conseil :</strong> Assurez-vous de bien tester votre modèle avant de l'intégrer dans la plateforme.
+
+                    </div>
+                </div>
+            </div>
+
+
+        <div class="footer">
+            <p>Projet Fil Rouge - Industrialisation d'un pipeline d'IA dans le cloud</p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Référence au conteneur de la liste des modèles
+            const modelsListEl = document.getElementById('modelsList');
+            const refreshStatsButton = document.getElementById('refreshStats');
+            let modelUsageChart = null;
+
+            // Fonction pour charger les modèles disponibles
+            async function loadModels() {
+                try {
+                    const response = await fetch('/api/models');
+                    if (!response.ok) {
+                        throw new Error(`Erreur HTTP: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+
+                    // Vider le conteneur
+                    modelsListEl.innerHTML = '';
+
+                    // Afficher chaque modèle
+                    data.models.forEach(model => {
+                        const modelCard = document.createElement('div');
+                        modelCard.className = 'col-md-6 mb-4';
+
+                        const speakerBadge = model.supports_speaker_id
+                            ? '<span class="badge bg-success model-badge">Identification des locuteurs</span>'
+                            : '<span class="badge bg-secondary model-badge">Sans identification</span>';
+
+                        modelCard.innerHTML = `
+                            <div class="model-card" data-model="${model.name}">
+                                <h5>${model.name} ${speakerBadge}</h5>
+                                <p class="text-muted">${model.description}</p>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="badge bg-primary">Utilisations: <span id="usage-${model.name}">--</span></span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+
+                        modelsListEl.appendChild(modelCard);
+                    });
+
+                    // Charger les statistiques d'utilisation
+                    loadModelUsageStats();
+
+                } catch (error) {
+                    console.error('Erreur lors du chargement des modèles:', error);
+                    modelsListEl.innerHTML = `
+                        <div class="col-12">
+                            <div class="alert alert-danger">
+                                Impossible de charger les modèles. Erreur: ${error.message}
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            // Fonction pour initialiser le graphique
+            function initChart(labels, data) {
+                const ctx = document.getElementById('modelUsageChart').getContext('2d');
+
+                if (modelUsageChart) {
+                    modelUsageChart.destroy();
+                }
+
+                modelUsageChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Nombre d\'utilisations',
+                            data: data,
+                            backgroundColor: [
+                                'rgba(54, 162, 235, 0.7)',
+                                'rgba(75, 192, 192, 0.7)',
+                                'rgba(153, 102, 255, 0.7)',
+                                'rgba(255, 159, 64, 0.7)'
+                            ],
+                            borderColor: [
+                                'rgba(54, 162, 235, 1)',
+                                'rgba(75, 192, 192, 1)',
+                                'rgba(153, 102, 255, 1)',
+                                'rgba(255, 159, 64, 1)'
+                            ],
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    precision: 0
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Fonction pour charger les statistiques d'utilisation des modèles
+            async function loadModelUsageStats() {
+                try {
+                    const response = await fetch('/api/statistics');
+                    if (!response.ok) {
+                        throw new Error(`Erreur HTTP: ${response.status}`);
+                    }
+
+                    const stats = await response.json();
+
+                    // Mettre à jour le compteur d'utilisation pour chaque modèle
+                    if (stats.inferences_by_model) {
+                        for (const [modelName, count] of Object.entries(stats.inferences_by_model)) {
+                            const usageEl = document.getElementById(`usage-${modelName}`);
+                            if (usageEl) {
+                                usageEl.textContent = count;
+                            }
+                        }
+
+                        // Mettre à jour le graphique
+                        const labels = Object.keys(stats.inferences_by_model);
+                        const data = Object.values(stats.inferences_by_model);
+
+                        initChart(labels, data);
+                    }
+
+                } catch (error) {
+                    console.error('Erreur lors du chargement des statistiques:', error);
+                }
+            }
+
+            // Charger les modèles au chargement de la page
+            loadModels();
+
+            // Configurer le bouton de rafraîchissement
+            refreshStatsButton

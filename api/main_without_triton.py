@@ -14,6 +14,7 @@ from pydantic import BaseModel
 import aiohttp
 from transformers import pipeline
 import torch
+import ffmpeg
 
 # Initialiser le modèle Whisper une seule fois au démarrage
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -94,10 +95,16 @@ def save_statistics(stats):
     with open(STATS_FILE, "w") as f:
         json.dump(stats, f, indent=4)
 
+def refresh_statistics():
+    stats = load_statistics()
+    stats["avg_processing_time"] = sum(stats["processing_times"]) / len(stats["processing_times"])
+    save_statistics(stats)
+
 
 # Fonction pour mettre à jour les statistiques après un traitement
 def update_statistics(request_type, processing_time, success=True):
     stats = load_statistics()
+    stats["processing_times"] = []  # Réinitialisation temporaire
 
     request_type_str = str(request_type)
 
@@ -108,8 +115,10 @@ def update_statistics(request_type, processing_time, success=True):
 
         # Mettre à jour le temps de traitement moyen
         stats["processing_times"].append(processing_time)
-        if len(stats["processing_times"]) > 100:  # Garder seulement les 100 derniers temps
-            stats["processing_times"].pop(0)
+        if processing_time > 0 and processing_time < 3600:
+            stats["processing_times"].append(processing_time)
+        processing_time_seconds = processing_time / 1000  # exemple
+        stats["processing_times"].append(processing_time_seconds)
 
         stats["avg_processing_time"] = sum(stats["processing_times"]) / len(stats["processing_times"])
 
@@ -160,44 +169,78 @@ async def test_triton_meta():
 
 
 # Fonction pour générer des sous-titres SRT
+def format_time(seconds):
+    """
+    Formate un temps en secondes au format SRT (HH:MM:SS,MMM).
+    Similaire à la fonction utilisée dans test_pipeline_3.py
+    """
+    hours = int(seconds / 3600)
+    seconds %= 3600
+    minutes = int(seconds / 60)
+    seconds %= 60
+    # Extraction précise des millisecondes
+    milliseconds = round((seconds - int(seconds)) * 1000)
+    seconds = int(seconds)
+
+    # Format exact avec une virgule (pas un point) entre secondes et millisecondes
+    formatted_time = f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
+
+    return formatted_time
+
+
 def generate_srt(result):
+    """
+    Génère un contenu SRT à partir du résultat de Whisper.
+    Implémentation améliorée basée sur test_pipeline_3.py
+    """
+    srt_content = ""
+    offset = 0
+
+    # Déterminer la source des segments (chunks ou segments)
     if "chunks" in result:
         segments = result["chunks"]
     elif "segments" in result:
         segments = result["segments"]
     else:
         # Si pas de segments détaillés, créer un segment unique
-        segments = [{"start": 0, "end": 100, "text": result["text"]}]
+        return f"1\n00:00:00,000 --> 00:01:00,000\n{result['text'].strip()}\n\n"
 
-    srt_content = ""
-    for i, segment in enumerate(segments):
-        # Les clés peuvent varier selon la version de Whisper
-        start_time = segment.get("start", 0)
-        end_time = segment.get("end", start_time + 5)
+    for index, segment in enumerate(segments):
+        # Vérifier le format du timestamp (peut être ["timestamp"][0/1] ou start/end)
+        if "timestamp" in segment and isinstance(segment["timestamp"], list) and len(segment["timestamp"]) == 2:
+            start = offset + segment["timestamp"][0]
+            end = offset + segment["timestamp"][1]
+
+            # Vérifier si start > end (indication d'un nouveau segment)
+            if start > end:
+                offset += 28  # Même valeur que chunk_length_s utilisée dans le traitement
+                continue
+        else:
+            # Format alternatif avec start/end
+            start = segment.get("start", 0)
+            end = segment.get("end", start + 5)  # Durée par défaut de 5 secondes
+
+        # Récupérer le texte
         text = segment.get("text", "").strip()
 
         # Formater pour SRT
-        srt_content += f"{i + 1}\n"
-        srt_content += f"{format_time(start_time)} --> {format_time(end_time)}\n"
+        srt_content += f"{index + 1}\n"
+        srt_content += f"{format_time(start)} --> {format_time(end)}\n"
         srt_content += f"{text}\n\n"
 
     return srt_content
 
 
-def format_time(seconds):
-    hours = int(seconds / 3600)
-    minutes = int((seconds % 3600) / 60)
-    secs = seconds % 60
-    milliseconds = int((secs - int(secs)) * 1000)
-
-    return f"{hours:02d}:{minutes:02d}:{int(secs):02d},{milliseconds:03d}"
-
-
 # Remplacer la fonction process_video par une version qui utilise directement Whisper
+
+
 async def process_video(file_path, request_type):
     """
     Traite le fichier avec Whisper directement.
+    Reproduit exactement le comportement de test_pipeline_3.py
     """
+    import math  # Nécessaire pour la fonction format_time identique à test_pipeline_3.py
+
     # Créer l'ID du résultat
     result_id = str(uuid.uuid4())
     result_dir = f"results/{result_id}"
@@ -205,6 +248,7 @@ async def process_video(file_path, request_type):
 
     # Déterminer le type de fichier
     file_ext = os.path.splitext(file_path)[1].lower()
+    file_name = os.path.basename(file_path).replace(file_ext, "")  # Nom du fichier sans extension
 
     # Métriques pour les statistiques
     start_time = time.time()
@@ -214,21 +258,40 @@ async def process_video(file_path, request_type):
     input_path = file_path
 
     if file_ext == '.mp4':
-        temp_audio_path = f"{result_dir}/audio.wav"
-        # Extraire seulement les 60 premières secondes et convertir en mono 16kHz
-        os.system(f"ffmpeg -i {file_path} -t 60 -ar 16000 -ac 1 {temp_audio_path} -y")
-        print(f"Audio extrait vers : {temp_audio_path}")
-        input_path = temp_audio_path
+        temp_audio_path = f"{result_dir}/audio-{file_name}.wav"
+        try:
+            # Utiliser exactement la même méthode que test_pipeline_3.py
+            stream = ffmpeg.input(file_path)
+            stream = ffmpeg.output(stream, temp_audio_path)  # Pas de paramètres ar ou ac
+            ffmpeg.run(stream, overwrite_output=True)
+            print(f"Audio extrait vers : {temp_audio_path}")
+            input_path = temp_audio_path
+        except ffmpeg.Error as e:
+            print(f"Erreur lors de l'extraction audio: {e.stderr.decode() if e.stderr else str(e)}")
+            raise HTTPException(status_code=500, detail="Erreur lors de l'extraction audio")
 
-    # Transcription avec Whisper
+    # Transcription avec Whisper - utiliser exactement les mêmes paramètres
     try:
         print(f"Transcription du fichier {input_path}")
-        result = whisper_model(input_path)
-        print(f"Transcription réussie: {result['text'][:100]}...")
+        # En fonction du device, adapter le dtype comme dans test_pipeline_3.py
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype = torch.float16 if device == "cuda" else torch.float32
 
-        # Récupérer le texte complet et les sous-titres
-        text = result["text"]
-        subtitles = generate_srt(result)
+        # Utiliser le modèle identique à test_pipeline_3.py
+        transcription = whisper_model(input_path, chunk_length_s=28, return_timestamps=True)
+        print(f"Transcription réussie: {transcription['text'][:100]}...")
+
+        # Utiliser la même méthode de génération de sous-titres que test_pipeline_3.py
+        # Fonction format_time identique à test_pipeline_3.py
+        def format_time(seconds):
+            hours = math.floor(seconds / 3600)
+            seconds %= 3600
+            minutes = math.floor(seconds / 60)
+            seconds %= 60
+            milliseconds = round((seconds - math.floor(seconds)) * 1000)
+            seconds = math.floor(seconds)
+            formatted_time = f"{hours:02d}:{minutes:02d}:{seconds:01d},{milliseconds:03d}"
+            return formatted_time
 
         # Préparation des fichiers résultats selon le type de requête
         result_files = {}
@@ -238,64 +301,146 @@ async def process_video(file_path, request_type):
                 raise HTTPException(status_code=400,
                                     detail="Seuls les fichiers MP4 sont acceptés pour ce type de traitement")
 
-            # Enregistrer les sous-titres dans un fichier SRT
-            srt_path = f"{result_dir}/subtitles.srt"
-            with open(srt_path, "w", encoding="utf-8") as f:
-                f.write(subtitles)
+            # Générer les sous-titres avec EXACTEMENT la même méthode que test_pipeline_3.py
+            subtitle_file = f"{result_dir}/sub-{file_name}.en.srt"
+            text = ""
+            offset = 0
 
-            # Utiliser ffmpeg pour incruster les sous-titres dans la vidéo
+            for index, chunk in enumerate(transcription["chunks"]):
+                start = offset + chunk["timestamp"][0]
+                end = offset + chunk["timestamp"][1]
+                if start > end:
+                    # chunk is the delimitation of a new segment
+                    offset += 28
+                    continue
+                text_chunk = chunk["text"]
+                segment_start = format_time(start)
+                segment_end = format_time(end)
+                text += f"{str(index + 1)}\n"
+                text += f"{segment_start} --> {segment_end}\n"
+                text += f"{text_chunk}\n"
+                text += "\n"
+
+            # Écrire exactement comme dans test_pipeline_3.py
+            with open(subtitle_file, "w") as f:
+                f.write(text)
+
+            # Utiliser ffmpeg exactement comme dans test_pipeline_3.py
             output_path = f"{result_dir}/video_with_subtitles.mp4"
-            os.system(f'ffmpeg -i {file_path} -vf subtitles={srt_path} {output_path}')
 
-            result_files = {
-                "result_url": f"/results/{result_id}/video_with_subtitles.mp4",
-                "download_url": f"/download/{result_id}/video_with_subtitles.mp4"
-            }
+            try:
+                # Reproduire EXACTEMENT la même commande ffmpeg
+                video_input_stream = ffmpeg.input(file_path)
+                # IMPORTANT: Pas de subtitle_input_stream car on utilise embedded_subtitle=True
+                # comme dans test_pipeline_3.py
 
+                # Méthode avec sous-titres incrustés
+                stream = ffmpeg.output(video_input_stream, output_path,
+                                       vf=f"subtitles={subtitle_file}")
+                ffmpeg.run(stream, overwrite_output=True)
+
+                result_files = {
+                    "result_url": f"/results/{result_id}/video_with_subtitles.mp4",
+                    "download_url": f"/download/{result_id}/video_with_subtitles.mp4"
+                }
+            except ffmpeg.Error as e:
+                print(f"Erreur FFmpeg: {e.stderr.decode() if e.stderr else str(e)}")
+                # Ne pas utiliser de méthode alternative pour rester fidèle à test_pipeline_3.py
+                raise HTTPException(status_code=500, detail=f"Erreur lors de l'incrustation des sous-titres: {str(e)}")
+
+        # Le reste du code pour les autres types de requêtes...
         elif request_type == 2:  # Vidéo + sous-titres séparés
             if file_ext != ".mp4":
                 raise HTTPException(status_code=400,
                                     detail="Seuls les fichiers MP4 sont acceptés pour ce type de traitement")
 
+            # Utiliser la même méthode de génération que pour request_type 1
+            subtitle_file = f"{result_dir}/sub-{file_name}.en.srt"
+            text = ""
+            offset = 0
+
+            for index, chunk in enumerate(transcription["chunks"]):
+                start = offset + chunk["timestamp"][0]
+                end = offset + chunk["timestamp"][1]
+                if start > end:
+                    offset += 28
+                    continue
+                text_chunk = chunk["text"]
+                segment_start = format_time(start)
+                segment_end = format_time(end)
+                text += f"{str(index + 1)}\n"
+                text += f"{segment_start} --> {segment_end}\n"
+                text += f"{text_chunk}\n"
+                text += "\n"
+
+            with open(subtitle_file, "w") as f:
+                f.write(text)
+
             # Copier la vidéo originale
             video_path = f"{result_dir}/video.mp4"
             shutil.copy2(file_path, video_path)
 
-            # Enregistrer les sous-titres dans un fichier SRT
-            srt_path = f"{result_dir}/subtitles.srt"
-            with open(srt_path, "w", encoding="utf-8") as f:
-                f.write(subtitles)
+            # Utiliser la méthode de test_pipeline_3.py pour les sous-titres séparés (embedded_subtitle=False)
+            output_path = f"{result_dir}/video_with_metadata.mp4"
 
-            # Ajouter les métadonnées à la vidéo
-            metadata_video_path = f"{result_dir}/video_with_metadata.mp4"
-            os.system(f'ffmpeg -i {video_path} -c copy -metadata:s:s:0 language=fra {metadata_video_path}')
+            try:
+                video_input_stream = ffmpeg.input(file_path)
+                subtitle_input_stream = ffmpeg.input(subtitle_file)
 
-            result_files = {
-                "video_url": f"/results/{result_id}/video_with_metadata.mp4",
-                "subtitles": subtitles,
-                "subtitles_url": f"/results/{result_id}/subtitles.srt",
-                "download_url": f"/download/{result_id}/video_with_metadata.mp4"
-            }
+                stream = ffmpeg.output(
+                    video_input_stream, subtitle_input_stream, output_path,
+                    **{"c": "copy", "c:s": "mov_text"},
+                    **{"metadata:s:s:0": "language=fra",
+                       "metadata:s:s:1": f"title=sub-{file_name}"}
+                )
+                ffmpeg.run(stream, overwrite_output=True)
+
+                result_files = {
+                    "video_url": f"/results/{result_id}/video_with_metadata.mp4",
+                    "subtitles": text,
+                    "subtitles_url": f"/results/{result_id}/sub-{file_name}.en.srt",
+                    "download_url": f"/download/{result_id}/video_with_metadata.mp4"
+                }
+            except ffmpeg.Error as e:
+                print(f"Erreur FFmpeg: {e.stderr.decode() if e.stderr else str(e)}")
+                raise HTTPException(status_code=500, detail="Erreur lors de l'ajout des métadonnées")
 
         elif request_type == 3:  # Sous-titres uniquement
-            # Enregistrer les sous-titres dans un fichier SRT
-            srt_path = f"{result_dir}/subtitles.srt"
-            with open(srt_path, "w", encoding="utf-8") as f:
-                f.write(subtitles)
+            # Utiliser la même méthode de génération
+            subtitle_file = f"{result_dir}/sub-{file_name}.en.srt"
+            text = ""
+            offset = 0
+
+            for index, chunk in enumerate(transcription["chunks"]):
+                start = offset + chunk["timestamp"][0]
+                end = offset + chunk["timestamp"][1]
+                if start > end:
+                    offset += 28
+                    continue
+                text_chunk = chunk["text"]
+                segment_start = format_time(start)
+                segment_end = format_time(end)
+                text += f"{str(index + 1)}\n"
+                text += f"{segment_start} --> {segment_end}\n"
+                text += f"{text_chunk}\n"
+                text += "\n"
+
+            with open(subtitle_file, "w") as f:
+                f.write(text)
 
             result_files = {
-                "subtitles": subtitles,
-                "download_url": f"/download/{result_id}/subtitles.srt"
+                "subtitles": text,
+                "download_url": f"/download/{result_id}/sub-{file_name}.en.srt"
             }
 
         elif request_type == 4:  # Texte uniquement
             # Enregistrer le texte dans un fichier TXT
             txt_path = f"{result_dir}/transcription.txt"
             with open(txt_path, "w", encoding="utf-8") as f:
-                f.write(text)
+                f.write(transcription["text"])
 
             result_files = {
-                "text": text,
+                "text": transcription["text"],
                 "download_url": f"/download/{result_id}/transcription.txt"
             }
 
@@ -314,7 +459,6 @@ async def process_video(file_path, request_type):
     return result_files, processing_time
 
 
-# Route pour la page d'accueil
 @app.get("/")
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
@@ -439,8 +583,160 @@ async def get_statistics():
     }
 
 
+def test_srt_generation(file_path):
+    """
+    Fonction de test pour générer un SRT et vérifier sa validité.
+    Version avec gestion améliorée des chemins de fichiers.
+    """
+    import os
+    import torch
+    from transformers import pipeline
+    import ffmpeg
+    import subprocess
+    import shlex
+
+    # Créer un dossier temporaire sans espaces ni caractères spéciaux
+    temp_dir = "temp_srt_test"
+    os.makedirs(temp_dir, exist_ok=True)
+
+    # Extraire l'audio si c'est une vidéo
+    file_ext = os.path.splitext(file_path)[1].lower()
+    if file_ext == '.mp4':
+        audio_path = os.path.join(temp_dir, "audio.wav")
+        try:
+            stream = ffmpeg.input(file_path)
+            stream = ffmpeg.output(stream, audio_path, ar=16000, ac=1)
+            ffmpeg.run(stream, overwrite_output=True)
+            print(f"Audio extrait vers : {audio_path}")
+            input_path = audio_path
+        except Exception as e:
+            print(f"Erreur lors de l'extraction audio: {str(e)}")
+            return None
+    else:
+        input_path = file_path
+
+    # Initialiser Whisper
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Utilisation de l'appareil: {device}")
+    whisper_model = pipeline("automatic-speech-recognition",
+                             "openai/whisper-small.en",
+                             torch_dtype=torch.float32,
+                             device=device,
+                             return_timestamps=True)
+
+    # Transcription
+    print(f"Transcription du fichier {input_path}")
+    result = whisper_model(input_path, chunk_length_s=28, return_timestamps=True)
+    print(f"Transcription réussie. Texte complet: {result['text'][:100]}...")
+
+    # Générer le SRT avec notre fonction
+    srt_content = generate_srt(result)
+
+    # Enregistrer dans un fichier pour test (dans le dossier temporaire)
+    srt_path = os.path.join(temp_dir, "subtitles.srt")
+    with open(srt_path, "w", encoding="utf-8") as f:
+        f.write(srt_content)
+    print(f"\nFichier SRT enregistré: {os.path.abspath(srt_path)}")
+
+    # Test d'incrustation - Méthode 1 (avec ffmpeg-python)
+    output_path = os.path.join(temp_dir, "output_with_subs.mp4")
+    try:
+        print("\nTentative avec ffmpeg-python:")
+        video_input = ffmpeg.input(file_path)
+        srt_abs_path = os.path.abspath(srt_path).replace('\\', '/')  # Normaliser les chemins pour Windows
+
+        # Option 1: filtres séparés
+        stream = (
+            video_input
+            .filter('subtitles', filename=srt_abs_path, force_style='FontSize=24,Alignment=2')
+            .output(output_path, acodec='copy')
+        )
+
+        ffmpeg.run(stream, overwrite_output=True)
+
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            print(f"Vidéo générée avec succès (méthode 1): {os.path.abspath(output_path)}")
+            return srt_path
+
+    except ffmpeg.Error as e:
+        print(f"Erreur avec ffmpeg-python: {e.stderr.decode() if e.stderr else str(e)}")
+
+    # Méthode 2: Utiliser subprocess avec des arguments correctement échappés
+    try:
+        print("\nTentative avec subprocess:")
+        output_path2 = os.path.join(temp_dir, "output_with_subs2.mp4")
+
+        # Échapper correctement le chemin du fichier SRT pour FFmpeg
+        # Sur Windows, utilisez des guillemets doubles et échappez les guillemets internes
+        if os.name == 'nt':  # Windows
+            srt_arg = f"subtitles={srt_abs_path}:force_style='FontSize=24,Alignment=2'"
+        else:  # Linux/Mac
+            srt_arg = f"subtitles='{srt_abs_path}':force_style='FontSize=24,Alignment=2'"
+
+        cmd = [
+            'ffmpeg',
+            '-i', file_path,
+            '-vf', srt_arg,
+            '-c:a', 'copy',
+            '-y',  # Forcer l'écrasement
+            output_path2
+        ]
+
+        print(f"Commande: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            print(f"Erreur subprocess: {result.stderr}")
+
+            # Méthode 3: Dernière tentative simplifiée
+            print("\nDernière tentative simplifiée:")
+            output_path3 = os.path.join(temp_dir, "output_with_subs3.mp4")
+
+            # Utilisez une approche très simple sans styles
+            cmd_simple = [
+                'ffmpeg',
+                '-i', file_path,
+                '-vf', f"subtitles={srt_abs_path}",
+                '-c:a', 'copy',
+                '-y',
+                output_path3
+            ]
+
+            print(f"Commande simplifiée: {' '.join(cmd_simple)}")
+            result = subprocess.run(cmd_simple, capture_output=True, text=True)
+
+            if result.returncode == 0 and os.path.exists(output_path3) and os.path.getsize(output_path3) > 0:
+                print(f"Vidéo générée avec succès (méthode 3): {os.path.abspath(output_path3)}")
+                return srt_path
+            else:
+                print(f"Échec de toutes les méthodes. Erreur: {result.stderr}")
+        else:
+            print(f"Vidéo générée avec succès (méthode 2): {os.path.abspath(output_path2)}")
+            return srt_path
+
+    except Exception as e:
+        print(f"Erreur générale: {str(e)}")
+
+    return srt_path
+
+@app.get("/stats")
+async def stats_page(request: Request):
+    """
+    Route pour afficher la page des statistiques
+    """
+    refresh_statistics()
+    return templates.TemplateResponse("stats.html", {"request": request})
+
+# Exemple d'utilisation:
+# test_srt_generation("chemin/vers/video.mp4")
+
+# Exemple d'utilisation:
+# test_srt_generation("chemin/vers/video.mp4")
+
+
 # Point d'entrée pour uvicorn
 if __name__ == "__main__":
+    #test_srt_generation("../input.mp4")
     import uvicorn
 
     uvicorn.run(app, host="localhost", port=8003)
