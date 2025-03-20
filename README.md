@@ -119,9 +119,13 @@ docker-compose logs -f
 ### Accéder aux statistiques
 
 Les statistiques sont disponibles dans l'interface utilisateur ou via l'API:
-
+```
+http://localhost:8003/stats
+```
+Ou
 ```
 GET http://localhost:8003/api/statistics
+GET http://localhost:8003/api/triton-statistics
 ```
 
 ## Structure du projet
