@@ -182,3 +182,111 @@ Pour les data scientists souhaitant ajouter de nouveaux modèles:
 1. Ajoutez votre modèle dans le dossier `model_repository/`
 2. Modifiez le fichier `config.pbtxt` correspondant
 3. Mettez à jour l'API pour utiliser votre nouveau modèle
+
+# Tests Unitaires pour l'Application de Sous-titrage
+
+Ce document explique comment installer les dépendances nécessaires et exécuter les tests unitaires pour l'application de sous-titrage automatique.
+
+## Prérequis
+
+Pour exécuter les tests unitaires, vous devez avoir les éléments suivants installés :
+
+- Python 3.8 ou supérieur
+- pip (gestionnaire de paquets Python)
+
+## Installation des dépendances
+
+1. Installez les dépendances nécessaires pour les tests :
+
+```bash
+pip install pytest pytest-asyncio httpx pytest-cov
+```
+
+Ces paquets sont nécessaires pour :
+- `pytest` : Framework de test principal
+- `pytest-asyncio` : Support pour les tests asynchrones
+- `httpx` : Client HTTP utilisé par le testclient de FastAPI
+- `pytest-cov` : Génération de rapports de couverture de code
+
+## Structure des tests
+
+Les tests sont organisés dans le dossier `tests/` avec la structure suivante :
+```
+tests/
+├── __init__.py
+├── conftest.py                  # Configuration pytest et fixtures partagées
+├── test_api.py                  # Tests des routes API
+├── test_srt_generation.py       # Tests de génération des sous-titres
+├── test_statistics.py           # Tests des fonctions de statistiques
+└── test_utils.py                # Tests des fonctions utilitaires
+```
+
+## Exécution des tests
+
+### Pour exécuter tous les tests :
+
+```bash
+pytest
+```
+
+### Pour exécuter un fichier de test spécifique :
+
+```bash
+pytest tests/test_api.py
+```
+
+### Pour exécuter un test spécifique :
+
+```bash
+pytest tests/test_api.py::test_home_route
+```
+
+### Pour exécuter les tests avec le rapport de couverture :
+
+```bash
+pytest --cov=app tests/
+```
+
+Cela générera un rapport indiquant le pourcentage de code couvert par les tests.
+
+### Pour générer un rapport de couverture HTML détaillé :
+
+```bash
+pytest --cov=app --cov-report=html tests/
+```
+
+Le rapport sera généré dans le dossier `htmlcov/`. Ouvrez `htmlcov/index.html` dans votre navigateur pour voir les détails.
+
+## Dépannage des tests
+
+### Erreur "ModuleNotFoundError"
+
+Si vous rencontrez des erreurs d'importation comme `ModuleNotFoundError`, assurez-vous que le répertoire racine du projet est dans votre `PYTHONPATH` :
+
+```bash
+# Sur Linux/Mac
+export PYTHONPATH=$PYTHONPATH:$(pwd)
+
+# Sur Windows (PowerShell)
+$env:PYTHONPATH += ";$pwd"
+```
+
+### Erreur avec Docker
+
+Pour exécuter les tests dans un environnement Docker, utilisez la commande suivante :
+
+```bash
+docker-compose run --rm api pytest
+```
+
+Cela lance les tests dans le conteneur API, assurant que l'environnement est identique à celui de production.
+
+## Intégration Continue
+
+Si vous utilisez un système d'intégration continue (CI), vous pouvez ajouter cette commande à votre workflow pour exécuter automatiquement les tests à chaque commit :
+
+```bash
+python -m pytest tests/ --cov=app --cov-report=xml
+```
+
+Le fichier `coverage.xml` généré peut être utilisé par des outils comme SonarQube ou Codecov pour suivre la couverture du code.
